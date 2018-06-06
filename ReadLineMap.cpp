@@ -28,6 +28,15 @@ typedef struct {
   bool endseq;
 } stmt_t;
 
+
+void processMatrixRow
+(
+ LineInfo *line
+)
+{
+  line->dump();
+}
+
 int
 main(int argc, char **argv)
 {
@@ -73,7 +82,7 @@ main(int argc, char **argv)
     printf("FAILURE: file %s is not an ELF file\n", argv[1]);
   }
 
-  readCubinLineMap(memPtr, elf);
+  readCubinLineMap(memPtr, elf, processMatrixRow);
   return 0;
 
   if (ehdr->e_machine == EM_CUDA) {

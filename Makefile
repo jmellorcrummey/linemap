@@ -6,7 +6,7 @@ SRC=ReadLineMap.cpp RelocateCubin.cpp ElfHelper.cpp ReadCubinLineMap.cpp
 
 all: readlm
 
-readlm: $(SRC)
+readlm: $(SRC) Line.hpp ReadCubinLineMap.hpp
 	g++ -std=c++11 $(DW_INC) -o $@ -g $(SRC) $(DW_LIB)
 
 run: readlm

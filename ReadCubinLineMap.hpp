@@ -55,11 +55,22 @@
 #ifndef __ReadCubinLineMap_hpp__
 #define __ReadCubinLineMap_hpp__
 
+//******************************************************************************
+// local includes
+//******************************************************************************
+
+#include "Line.hpp"
+
+//******************************************************************************
+// interface functions
+//******************************************************************************
+
 bool
 readCubinLineMap
 (
  char *cubin_ptr,
- Elf *cubin_elf
+ Elf *cubin_elf,
+ LineInfoCallback processMatrixRow
 );
 
 #endif

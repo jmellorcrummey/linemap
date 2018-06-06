@@ -87,12 +87,18 @@
 
 #define V(x) ((void*) x)
 
-#define NOISY 1
 
-#if NOISY
-#define DEBUG_OUTPUT(...) std::cout << __VA_ARGS__
+#if DUMP_DECODED_LINE == 0
+#define DUMP_RAWLINE_OUTPUT(...) std::cout << __VA_ARGS__
 #else
-#define DEBUG_OUTPUT(...)
+#define DUMP_RAWLINE_OUTPUT(...)
+#endif
+
+
+#if DUMP_HEADER 
+#define DUMP_HEADER_OUTPUT(...) std::cout << __VA_ARGS__
+#else
+#define DUMP_HEADER_OUTPUT(...)
 #endif
 
 
@@ -129,7 +135,7 @@ public:
   void dump() {
     const char **str = this->data();
     for (int i = 1; i < size(); i++) {
-      DEBUG_OUTPUT("  " << i << "\t" << str[i] << "\n");
+      DUMP_HEADER_OUTPUT("  " << i << "\t" << str[i] << "\n");
     }
   };
 };
@@ -142,7 +148,7 @@ public:
   void dump() {
     uint16_t *len = this->data();
     for (int i = 1; i < size(); i++) {
-      DEBUG_OUTPUT("  Opcode " << i << " has " << len[i] << " args\n"); 
+      DUMP_HEADER_OUTPUT("  Opcode " << i << " has " << len[i] << " args\n"); 
     }
   };
 };
@@ -161,7 +167,7 @@ public:
   );
 
   void dump(int i) {
-    DEBUG_OUTPUT("  " << i << "\t" << dir_index << "\t" << time <<
+    DUMP_HEADER_OUTPUT("  " << i << "\t" << dir_index << "\t" << time <<
 		 "\t" << size << "\t" << filename << "\n");
   };
 };
@@ -200,7 +206,8 @@ public:
    GElf_Shdr *shdr,
    const unsigned char *start,
    const unsigned char *end,
-   const unsigned char **sptr
+   const unsigned char **sptr,
+   LineInfoCallback processMatrixRow
   );
 
   void dump();
@@ -252,7 +259,8 @@ private:
    GElf_Shdr *shdr,
    const unsigned char *start,
    const unsigned char *end,
-   const unsigned char **sptr
+   const unsigned char **sptr,
+   LineInfoCallback processMatrixRow
   );
 
   void dumpHeader();
@@ -450,7 +458,8 @@ LineMapInfo::parse
  GElf_Shdr *shdr,
  const unsigned char *start,
  const unsigned char *end,
- const unsigned char **sptr
+ const unsigned char **sptr,
+ LineInfoCallback processMatrixRow
 )
 {
   parseHeader(ehdr, scn, shdr, end, sptr);
@@ -458,7 +467,7 @@ LineMapInfo::parse
   parseDirectoryTable(ehdr, scn, shdr, start, end, sptr);
   parseFileTable(ehdr, scn, shdr, start, end, sptr);
   dump();
-  parseLineMap(ehdr, scn, shdr, start, end, sptr);
+  parseLineMap(ehdr, scn, shdr, start, end, sptr, processMatrixRow);
 }
 
 
@@ -602,7 +611,8 @@ LineMapInfo::parseLineMap
  GElf_Shdr *shdr,
  const unsigned char *start,
  const unsigned char *end,
- const unsigned char **sptr
+ const unsigned char **sptr,
+ LineInfoCallback processMatrixRow
 )
 {
   const unsigned char *ptr = *sptr;
@@ -612,9 +622,9 @@ LineMapInfo::parseLineMap
   lineInfo.reset(lds);
 
   if (ptr == end) {
-    DEBUG_OUTPUT(" No Line Number Statements.\n");
+    DUMP_RAWLINE_OUTPUT(" No Line Number Statements.\n");
   } else {
-    DEBUG_OUTPUT(" Line Number Statements:\n");
+    DUMP_RAWLINE_OUTPUT(" Line Number Statements:\n");
 
     while (ptr < end) {
       size_t offset = ptr - start;
@@ -622,7 +632,7 @@ LineMapInfo::parseLineMap
       // read the opcode
       unsigned int opcode = uread(ptr, 1);
 
-      DEBUG_OUTPUT("  [" <<
+      DUMP_RAWLINE_OUTPUT("  [" <<
 		   std::internal << std::hex << std::setw(10) <<
 		   std::setfill('0') << V(offset) << std::dec <<
 		   "]  "); 
@@ -639,18 +649,19 @@ LineMapInfo::parseLineMap
 	unsigned int addr_offset = lineInfo.address - prev_address;
 	int line_offset = lineInfo.line - prev_line;
 
-	DEBUG_OUTPUT(
+	DUMP_RAWLINE_OUTPUT(
 	  "Special opcode "  << opcode - lds.opcode_base <<
 	  ": advance Address by " << addr_offset << " to " <<
 	  std::hex << (void *) lineInfo.address << std::dec);
 
 	if (lineInfo.op_index)
-	  DEBUG_OUTPUT(", op_index = " << (uint16_t) lineInfo.op_index);
+	  DUMP_RAWLINE_OUTPUT(", op_index = " << (uint16_t) lineInfo.op_index);
 
-	DEBUG_OUTPUT(" and Line by " << line_offset << " to " <<
+	DUMP_RAWLINE_OUTPUT(" and Line by " << line_offset << " to " <<
 		     lineInfo.line << "\n");
 
-	// FIXME: append row to matrix here
+	// append row to matrix here
+        processMatrixRow(&lineInfo);
 
         lineInfo.resetFlagsAndDiscriminator();
 
@@ -664,14 +675,14 @@ LineMapInfo::parseLineMap
 	// read sub-opcode
 	opcode = uread(ptr, 1);
 
-	DEBUG_OUTPUT("Extended opcode "  << opcode << ": ");
+	DUMP_RAWLINE_OUTPUT("Extended opcode "  << opcode << ": ");
       
 	switch (opcode) {
 
 	case DW_LNE_end_sequence:
 	  lineInfo.reset(lds); // reset line to defaults
 
-	  DEBUG_OUTPUT("End of Sequence\n\n");
+	  DUMP_RAWLINE_OUTPUT("End of Sequence\n\n");
 
 	  break;
 
@@ -679,12 +690,12 @@ LineMapInfo::parseLineMap
 	  uint64_t addr = uread(ptr, len - (ptr - inst_begin));
 	  lineInfo.setAddress(addr);
 
-	  DEBUG_OUTPUT("set Address to "); 
+	  DUMP_RAWLINE_OUTPUT("set Address to "); 
 
 	  if (addr == 0) 
-	    DEBUG_OUTPUT("0x0\n"); // the line below drops the 0x for 0 
+	    DUMP_RAWLINE_OUTPUT("0x0\n"); // the line below drops the 0x for 0 
 	  else
-	    DEBUG_OUTPUT(std::hex << (void *) addr << std::dec << "\n");
+	    DUMP_RAWLINE_OUTPUT(std::hex << (void *) addr << std::dec << "\n");
 
 	  break;
 	}
@@ -693,7 +704,7 @@ LineMapInfo::parseLineMap
 	  FileTableEntry *fte = new FileTableEntry(ptr);
 	  files[fte->dir_index] = fte;
 
-	  DEBUG_OUTPUT("define new file: dir=" << fte->dir_index <<
+	  DUMP_RAWLINE_OUTPUT("define new file: dir=" << fte->dir_index <<
 		       ", name=" << fte->filename << "\n");
 
 	  break;
@@ -704,7 +715,7 @@ LineMapInfo::parseLineMap
 
 	  lineInfo.setDiscrim(dis);
 
-	  DEBUG_OUTPUT("set discriminator to " << dis << "\n");
+	  DUMP_RAWLINE_OUTPUT("set discriminator to " << dis << "\n");
 
 	  break;
 	}
@@ -712,7 +723,7 @@ LineMapInfo::parseLineMap
 	default:
 	  ptr += len - 1;
 
-	  DEBUG_OUTPUT("unknown opcode\n");
+	  DUMP_RAWLINE_OUTPUT("unknown opcode\n");
 
 	  break;
 	}
@@ -727,7 +738,7 @@ LineMapInfo::parseLineMap
 	  int64_t offset = sread_leb128(ptr);
 	  lineInfo.advanceLine(offset);
 
-	  DEBUG_OUTPUT("Advance Line by " <<
+	  DUMP_RAWLINE_OUTPUT("Advance Line by " <<
 		       offset << " to " << lineInfo.line << "\n");
 
 	  break;
@@ -737,7 +748,7 @@ LineMapInfo::parseLineMap
 	  uint64_t offset = uread_leb128(ptr);
 	  lineInfo.advancePC(offset, lds);
 
-	  DEBUG_OUTPUT("Advance PC by " <<
+	  DUMP_RAWLINE_OUTPUT("Advance PC by " <<
 		       offset << " to " << V(lineInfo.address) << "\n");
 
 	  break;
@@ -748,20 +759,20 @@ LineMapInfo::parseLineMap
 	  int div = offset / lds.line_range;
 	  lineInfo.advancePC(div, lds);
 
-	  DEBUG_OUTPUT("Advance address by constant " <<
+	  DUMP_RAWLINE_OUTPUT("Advance address by constant " <<
 		       offset << " to " << V(lineInfo.address));
 
 	  if (lineInfo.op_index)
-	    DEBUG_OUTPUT(", op_index to " << lineInfo.op_index);
+	    DUMP_RAWLINE_OUTPUT(", op_index to " << lineInfo.op_index);
 
-	  DEBUG_OUTPUT("\n");
+	  DUMP_RAWLINE_OUTPUT("\n");
 
 	  break;
 	}
 	
 	case DW_LNS_copy:
 
-	  DEBUG_OUTPUT("Copy\n");
+	  DUMP_RAWLINE_OUTPUT("Copy\n");
 
 	  // FIXME: append row to matrix here
 
@@ -771,7 +782,7 @@ LineMapInfo::parseLineMap
 	  unsigned int offset = uread(ptr, 2);
 	  lineInfo.fixedAdvancePC(offset);
 
-	  DEBUG_OUTPUT("advance address by fixed value " << offset <<
+	  DUMP_RAWLINE_OUTPUT("advance address by fixed value " << offset <<
 		       " to " << V(lineInfo.address));
 
 	  break;
@@ -780,14 +791,14 @@ LineMapInfo::parseLineMap
 	case DW_LNS_negate_stmt:
 	  lineInfo.negateStmt();
 
-	  DEBUG_OUTPUT("set 'is_stmt' to " << lineInfo.is_stmt << "\n");
+	  DUMP_RAWLINE_OUTPUT("set 'is_stmt' to " << lineInfo.is_stmt << "\n");
 
 	  break;
 	
 	case DW_LNS_set_basic_block:
 	  lineInfo.basicBlock();
 
-	  DEBUG_OUTPUT("set basic block flag\n");
+	  DUMP_RAWLINE_OUTPUT("set basic block flag\n");
 
 	  break;
 	
@@ -795,7 +806,7 @@ LineMapInfo::parseLineMap
 	  unsigned int col = uread_leb128(ptr);
 	  lineInfo.setColumn(col);
 
-	  DEBUG_OUTPUT("Set Column to " << col << "\n");
+	  DUMP_RAWLINE_OUTPUT("Set Column to " << col << "\n");
 
 	  break;
 	}
@@ -803,7 +814,7 @@ LineMapInfo::parseLineMap
 	case DW_LNS_set_epilogue_begin:
 	  lineInfo.beginEpilogue();
 
-	  DEBUG_OUTPUT("Set epilogue begin flag\n");
+	  DUMP_RAWLINE_OUTPUT("Set epilogue begin flag\n");
 
 	  break;
 	
@@ -811,7 +822,7 @@ LineMapInfo::parseLineMap
 	  uint64_t file = uread_leb128(ptr);
 	  lineInfo.setFile(file);
 
-	  DEBUG_OUTPUT("Set File Name to entry " << file <<
+	  DUMP_RAWLINE_OUTPUT("Set File Name to entry " << file <<
 		       " in the File Name Table\n");
 
 	  break;
@@ -820,14 +831,14 @@ LineMapInfo::parseLineMap
 	  unsigned int isa = uread_leb128(ptr);
 	  lineInfo.setIsa(isa);
 
-	  DEBUG_OUTPUT("set isa to " << isa << "\n");
+	  DUMP_RAWLINE_OUTPUT("set isa to " << isa << "\n");
 	  break;
 	}
 
 	case DW_LNS_set_prologue_end:
 	  lineInfo.endPrologue();
 	  
-	  DEBUG_OUTPUT("Set prologue end flag\n");
+	  DUMP_RAWLINE_OUTPUT("Set prologue end flag\n");
 	  break;
 	}
       }
@@ -836,7 +847,7 @@ LineMapInfo::parseLineMap
     // return updated pointer into the section
     *sptr = (const unsigned char *) ptr;
 
-    DEBUG_OUTPUT("\n");
+    DUMP_RAWLINE_OUTPUT("\n");
   }
 
   return true;
@@ -848,7 +859,8 @@ parseLineSection
 (
  GElf_Ehdr *ehdr,
  Elf_Scn *scn,
- GElf_Shdr *shdr
+ GElf_Shdr *shdr,
+ LineInfoCallback processMatrixRow
 )
 {
   if (shdr->sh_size == 0) return;
@@ -865,7 +877,7 @@ parseLineSection
   const unsigned char *end = start + data->d_size;
 
   LineMapInfo lmh;
-  lmh.parse(ehdr, scn, shdr, start, end, &ptr);
+  lmh.parse(ehdr, scn, shdr, start, end, &ptr, processMatrixRow);
 }
 
 
@@ -874,7 +886,7 @@ LineMapInfo::dumpHeader
 (
 )
 {
-  DEBUG_OUTPUT
+  DUMP_HEADER_OUTPUT
     ("Raw dump of debug contents of section .debug_line:\n\n" <<
      "  Offset:                      0x0\n" <<
      "  Length:                      " <<          unit_length      << "\n" <<
@@ -894,9 +906,9 @@ LineMapInfo::dumpOpcodeTable
 (
 )
 {
-  DEBUG_OUTPUT(" Opcodes:\n");
+  DUMP_HEADER_OUTPUT(" Opcodes:\n");
   op_lengths.dump();
-  DEBUG_OUTPUT("\n");
+  DUMP_HEADER_OUTPUT("\n");
 }
 
 
@@ -905,10 +917,10 @@ LineMapInfo::dumpDirectoryTable
 (
 )
 {
-  DEBUG_OUTPUT(" The Directory Table (offset " <<
+  DUMP_HEADER_OUTPUT(" The Directory Table (offset " <<
 	       std::hex << directories.offset << std::dec << "):\n");
   directories.dump();
-  DEBUG_OUTPUT("\n");
+  DUMP_HEADER_OUTPUT("\n");
 }
 
 
@@ -917,11 +929,11 @@ LineMapInfo::dumpFileTable
 (
 )
 {
-  DEBUG_OUTPUT(" The File Name Table (offset " <<
+  DUMP_HEADER_OUTPUT(" The File Name Table (offset " <<
 	       std::hex << files.offset << std::dec << "):\n"
 	       "  Entry\tDir\tTime\tSize\tName\n");
   files.dump();
-  DEBUG_OUTPUT("\n");
+  DUMP_HEADER_OUTPUT("\n");
 }
 
 
@@ -944,7 +956,8 @@ readLineMap
 (
  char *cubin_ptr,
  Elf *elf,
- Elf_SectionVector *sections
+ Elf_SectionVector *sections,
+ LineInfoCallback processMatrixRow
 )
 {
   GElf_Ehdr ehdr_v;
@@ -975,7 +988,7 @@ readLineMap
 
 	  // found the line map, so we are done with the linear scan of sections
 
-	  parseLineSection(ehdr, scn, &shdr);
+	  parseLineSection(ehdr, scn, &shdr, processMatrixRow);
 	  break;
 	}
       }
@@ -993,14 +1006,15 @@ bool
 readCubinLineMap
 (
  char *cubin_ptr,
- Elf *cubin_elf
+ Elf *cubin_elf,
+ LineInfoCallback processMatrixRow
 )
 {
   bool success = false;
 
   Elf_SectionVector *sections = elfGetSectionVector(cubin_elf);
   if (sections) {
-    readLineMap(cubin_ptr, cubin_elf, sections);
+    readLineMap(cubin_ptr, cubin_elf, sections, processMatrixRow);
     delete sections;
   }
 
