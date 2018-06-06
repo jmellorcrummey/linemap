@@ -379,7 +379,8 @@ LineDecoderSettings::read
   opcode_base = uread(ptr, 1);
 }
     
-void 
+
+void
 LineInfo::reset
 (
   const LineDecoderSettings &lds
@@ -391,11 +392,20 @@ LineInfo::reset
   line = 1;
   column = 0;
   is_stmt = lds.default_is_stmt;
+  isa = 0;
+
+  resetFlagsAndDiscriminator();
+}
+
+void
+LineInfo::resetFlagsAndDiscriminator
+(
+)
+{
   basic_block = false;
   end_sequence = false;
   prologue_end = false;
   epilogue_begin = false;
-  isa = 0;
   discriminator = 0;
 }
       
@@ -640,6 +650,10 @@ LineMapInfo::parseLineMap
 	DEBUG_OUTPUT(" and Line by " << line_offset << " to " <<
 		     lineInfo.line << "\n");
 
+	// FIXME: append row to matrix here
+
+        lineInfo.resetFlagsAndDiscriminator();
+
       } else if (opcode == 0) {
 
 	// read length
@@ -748,6 +762,8 @@ LineMapInfo::parseLineMap
 	case DW_LNS_copy:
 
 	  DEBUG_OUTPUT("Copy\n");
+
+	  // FIXME: append row to matrix here
 
 	  break;
 

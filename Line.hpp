@@ -105,15 +105,16 @@ public:
   void setColumn(uint64_t c)          { column         = c;                  };
   void negateStmt()                   { is_stmt        = !is_stmt;           };
 
+  void setIsa(uint32_t l)             { isa            = l;                  };
+
   void basicBlock()                   { basic_block    = true;               };
   void endSequence()                  { end_sequence   = true;               };
   void endPrologue()                  { prologue_end   = true;               };
   void beginEpilogue()                { epilogue_begin = true;               };
-
-  void setIsa(uint32_t l)             { isa            = l;                  };
   void setDiscrim(uint32_t d)         { discriminator  = d;                  };
 
   void reset(const LineDecoderSettings &lds);
+  void resetFlagsAndDiscriminator();
 
   void advancePC
   (
