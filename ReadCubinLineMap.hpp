@@ -70,7 +70,7 @@ readCubinLineMap
 (
  char *cubin_ptr,
  Elf *cubin_elf,
- LineInfoCallback processMatrixRow
+ LineInfoHandler *lih
 );
 
 #endif

@@ -88,11 +88,14 @@
 #define V(x) ((void*) x)
 
 
-#if DUMP_DECODED_LINE == 0
-#define DUMP_RAWLINE_OUTPUT(...) std::cout << __VA_ARGS__
+#if DUMP_RAW_LINE
+#define DUMP_RAW_OUTPUT(...) std::cout << __VA_ARGS__
 #else
-#define DUMP_RAWLINE_OUTPUT(...)
+#define DUMP_RAW_OUTPUT(...)
 #endif
+
+
+#define DUMP_HEADER       1
 
 
 #if DUMP_HEADER 
@@ -102,12 +105,112 @@
 #endif
 
 
+
 //******************************************************************************
 // type definitions
 //******************************************************************************
 
 typedef std::vector<Elf_Scn *> Elf_SectionVector;
 typedef std::vector<Elf64_Addr> Elf_SymbolVector;
+
+class DirectoryTable : public std::vector<const char *> {
+public:
+  const void *offset;
+
+  DirectoryTable() { push_back(NULL); };
+
+  const char *
+  entry
+  (
+    int i
+  ) 
+  { 
+    const char **str = this->data();
+    const char *result = NULL;
+    if (i > 0 && i < size()) result = str[i];
+    return result;
+  }
+
+  void dump() {
+    const char **str = this->data();
+    for (int i = 1; i < size(); i++) {
+      DUMP_HEADER_OUTPUT("  " << i << "\t" << str[i] << "\n");
+    }
+  };
+};
+
+
+class FileTableEntry {
+public:
+  uint16_t dir_index;
+  uint64_t time;
+  uint64_t size;
+  const char *filename;
+
+  FileTableEntry
+  (
+   const unsigned char *&ptr
+  );
+  
+  const char *getFileName() { return filename; };
+
+  uint16_t getDirIndex() { return dir_index; };
+
+  void dump
+  (
+    int i
+  ) {
+    DUMP_HEADER_OUTPUT("  " << i << "\t" << dir_index << "\t" << time <<
+		 "\t" << size << "\t" << filename << "\n");
+  };
+};
+
+
+class FileTable : public std::vector<FileTableEntry *> {
+public:
+  FileTable() { push_back(NULL); };
+
+
+  const char *getFileName
+  (
+    int i
+  ) {
+    FileTableEntry **fte = this->data();
+    return fte[i]->getFileName(); 
+  }; 
+
+
+  uint16_t 
+  getDirIndex
+  (
+    int i
+  ) {
+    FileTableEntry **fte = this->data();
+    return fte[i]->getDirIndex(); 
+  };
+
+  void dump() {
+    FileTableEntry **fte = this->data();
+    for (int i = 1; i < size(); i++) {
+      fte[i]->dump(i);
+    }
+  };
+
+public:
+  const void *offset;
+};
+
+
+class FileSystemRepr {
+public:
+  DirectoryTable &getDirectoryTable() { return directories; }
+
+  FileTable &getFileTable() { return files; }
+
+public:
+  DirectoryTable directories;
+  FileTable files;
+};
 
 class LineDecoderSettings {
 public:
@@ -126,21 +229,6 @@ public:
 };
 
 
-class DirectoryTable : public std::vector<const char *> {
-public:
-  const void *offset;
-
-  DirectoryTable() { push_back(NULL); };
-
-  void dump() {
-    const char **str = this->data();
-    for (int i = 1; i < size(); i++) {
-      DUMP_HEADER_OUTPUT("  " << i << "\t" << str[i] << "\n");
-    }
-  };
-};
-
-
 class OpcodeLengthTable : public std::vector<uint16_t> {
 public:
   OpcodeLengthTable() { push_back(0); };
@@ -148,41 +236,9 @@ public:
   void dump() {
     uint16_t *len = this->data();
     for (int i = 1; i < size(); i++) {
-      DUMP_HEADER_OUTPUT("  Opcode " << i << " has " << len[i] << " args\n"); 
-    }
-  };
-};
-
-
-class FileTableEntry {
-public:
-  uint16_t dir_index;
-  uint64_t time;
-  uint64_t size;
-  const char *filename;
-
-  FileTableEntry
-  (
-   const unsigned char *&ptr
-  );
-
-  void dump(int i) {
-    DUMP_HEADER_OUTPUT("  " << i << "\t" << dir_index << "\t" << time <<
-		 "\t" << size << "\t" << filename << "\n");
-  };
-};
-
-
-class FileTable : public std::vector<FileTableEntry *> {
-public:
-  const void *offset;
-
-  FileTable() { push_back(NULL); };
-
-  void dump() {
-    FileTableEntry **fte = this->data();
-    for (int i = 1; i < size(); i++) {
-      fte[i]->dump(i);
+      DUMP_HEADER_OUTPUT("  Opcode " << i << " has " << len[i]); 
+      if (len[i] == 1) DUMP_HEADER_OUTPUT(" arg\n"); 
+      else DUMP_HEADER_OUTPUT(" args\n"); 
     }
   };
 };
@@ -196,8 +252,7 @@ public:
 
   LineDecoderSettings lds;
   OpcodeLengthTable op_lengths; 
-  DirectoryTable directories;
-  FileTable files;
+  FileSystem fs;
 
   bool parse
   (
@@ -207,7 +262,7 @@ public:
    const unsigned char *start,
    const unsigned char *end,
    const unsigned char **sptr,
-   LineInfoCallback processMatrixRow
+   LineInfoHandler *lih
   );
 
   void dump();
@@ -260,7 +315,7 @@ private:
    const unsigned char *start,
    const unsigned char *end,
    const unsigned char **sptr,
-   LineInfoCallback processMatrixRow
+   LineInfoHandler *lih
   );
 
   void dumpHeader();
@@ -337,6 +392,32 @@ sread_leb128(const unsigned char *&ptr)
     }
   }
   return (int64_t) result;
+}
+
+
+FileSystem::FileSystem()
+{
+  repr = new FileSystemRepr;
+}
+
+
+FileSystem::~FileSystem()
+{
+  delete repr;
+}
+
+const char *
+FileSystem::getFileName(int i)
+{
+  return repr->files.getFileName(i);
+}
+
+
+const char *
+FileSystem::getDirName(int i)
+{
+  uint16_t index = repr->files.getDirIndex(i);
+  return repr->directories.entry(index);
 }
 
 
@@ -459,7 +540,7 @@ LineMapInfo::parse
  const unsigned char *start,
  const unsigned char *end,
  const unsigned char **sptr,
- LineInfoCallback processMatrixRow
+ LineInfoHandler *lih
 )
 {
   parseHeader(ehdr, scn, shdr, end, sptr);
@@ -467,7 +548,7 @@ LineMapInfo::parse
   parseDirectoryTable(ehdr, scn, shdr, start, end, sptr);
   parseFileTable(ehdr, scn, shdr, start, end, sptr);
   dump();
-  parseLineMap(ehdr, scn, shdr, start, end, sptr, processMatrixRow);
+  parseLineMap(ehdr, scn, shdr, start, end, sptr, lih);
 }
 
 
@@ -552,6 +633,8 @@ LineMapInfo::parseDirectoryTable
 {
   const char *ptr = (const char *) *sptr;
 
+  DirectoryTable &directories = fs.repr->getDirectoryTable();
+
   // the directory table is a sequence of strings ending with a empty string
 
   directories.offset = (void *) (*sptr - start);
@@ -584,6 +667,8 @@ LineMapInfo::parseFileTable
 {
   const unsigned char *ptr = (const unsigned char *) *sptr;
 
+  FileTable &files = fs.repr->getFileTable();
+
   // the file table is a sequence of strings ending with a empty string
 
   files.offset = (void *) (*sptr - start);
@@ -612,9 +697,12 @@ LineMapInfo::parseLineMap
  const unsigned char *start,
  const unsigned char *end,
  const unsigned char **sptr,
- LineInfoCallback processMatrixRow
+ LineInfoHandler *lih
 )
 {
+  FileTable &files = fs.repr->getFileTable();
+  DirectoryTable &directories = fs.repr->getDirectoryTable();
+
   const unsigned char *ptr = *sptr;
 
   LineInfo lineInfo;
@@ -622,9 +710,9 @@ LineMapInfo::parseLineMap
   lineInfo.reset(lds);
 
   if (ptr == end) {
-    DUMP_RAWLINE_OUTPUT(" No Line Number Statements.\n");
+    DUMP_RAW_OUTPUT(" No Line Number Statements.\n");
   } else {
-    DUMP_RAWLINE_OUTPUT(" Line Number Statements:\n");
+    DUMP_RAW_OUTPUT(" Line Number Statements:\n");
 
     while (ptr < end) {
       size_t offset = ptr - start;
@@ -632,7 +720,7 @@ LineMapInfo::parseLineMap
       // read the opcode
       unsigned int opcode = uread(ptr, 1);
 
-      DUMP_RAWLINE_OUTPUT("  [" <<
+      DUMP_RAW_OUTPUT("  [" <<
 		   std::internal << std::hex << std::setw(10) <<
 		   std::setfill('0') << V(offset) << std::dec <<
 		   "]  "); 
@@ -649,19 +737,19 @@ LineMapInfo::parseLineMap
 	unsigned int addr_offset = lineInfo.address - prev_address;
 	int line_offset = lineInfo.line - prev_line;
 
-	DUMP_RAWLINE_OUTPUT(
+	DUMP_RAW_OUTPUT(
 	  "Special opcode "  << opcode - lds.opcode_base <<
 	  ": advance Address by " << addr_offset << " to " <<
 	  std::hex << (void *) lineInfo.address << std::dec);
 
 	if (lineInfo.op_index)
-	  DUMP_RAWLINE_OUTPUT(", op_index = " << (uint16_t) lineInfo.op_index);
+	  DUMP_RAW_OUTPUT(", op_index = " << (uint16_t) lineInfo.op_index);
 
-	DUMP_RAWLINE_OUTPUT(" and Line by " << line_offset << " to " <<
+	DUMP_RAW_OUTPUT(" and Line by " << line_offset << " to " <<
 		     lineInfo.line << "\n");
 
-	// append row to matrix here
-        processMatrixRow(&lineInfo);
+	// append row to matrix
+        lih->processMatrixRow(&lineInfo, &fs);
 
         lineInfo.resetFlagsAndDiscriminator();
 
@@ -675,14 +763,19 @@ LineMapInfo::parseLineMap
 	// read sub-opcode
 	opcode = uread(ptr, 1);
 
-	DUMP_RAWLINE_OUTPUT("Extended opcode "  << opcode << ": ");
+	DUMP_RAW_OUTPUT("Extended opcode "  << opcode << ": ");
       
 	switch (opcode) {
 
 	case DW_LNE_end_sequence:
-	  lineInfo.reset(lds); // reset line to defaults
+          lineInfo.endSequence();
 
-	  DUMP_RAWLINE_OUTPUT("End of Sequence\n\n");
+	  DUMP_RAW_OUTPUT("End of Sequence\n\n");
+
+	  // append row to matrix 
+          lih->processMatrixRow(&lineInfo, &fs);
+
+	  lineInfo.reset(lds); // reset line to defaults
 
 	  break;
 
@@ -690,12 +783,12 @@ LineMapInfo::parseLineMap
 	  uint64_t addr = uread(ptr, len - (ptr - inst_begin));
 	  lineInfo.setAddress(addr);
 
-	  DUMP_RAWLINE_OUTPUT("set Address to "); 
+	  DUMP_RAW_OUTPUT("set Address to "); 
 
 	  if (addr == 0) 
-	    DUMP_RAWLINE_OUTPUT("0x0\n"); // the line below drops the 0x for 0 
+	    DUMP_RAW_OUTPUT("0x0\n"); // the line below drops the 0x for 0 
 	  else
-	    DUMP_RAWLINE_OUTPUT(std::hex << (void *) addr << std::dec << "\n");
+	    DUMP_RAW_OUTPUT(std::hex << (void *) addr << std::dec << "\n");
 
 	  break;
 	}
@@ -704,7 +797,7 @@ LineMapInfo::parseLineMap
 	  FileTableEntry *fte = new FileTableEntry(ptr);
 	  files[fte->dir_index] = fte;
 
-	  DUMP_RAWLINE_OUTPUT("define new file: dir=" << fte->dir_index <<
+	  DUMP_RAW_OUTPUT("define new file: dir=" << fte->dir_index <<
 		       ", name=" << fte->filename << "\n");
 
 	  break;
@@ -715,7 +808,7 @@ LineMapInfo::parseLineMap
 
 	  lineInfo.setDiscrim(dis);
 
-	  DUMP_RAWLINE_OUTPUT("set discriminator to " << dis << "\n");
+	  DUMP_RAW_OUTPUT("set discriminator to " << dis << "\n");
 
 	  break;
 	}
@@ -723,7 +816,7 @@ LineMapInfo::parseLineMap
 	default:
 	  ptr += len - 1;
 
-	  DUMP_RAWLINE_OUTPUT("unknown opcode\n");
+	  DUMP_RAW_OUTPUT("unknown opcode\n");
 
 	  break;
 	}
@@ -738,7 +831,7 @@ LineMapInfo::parseLineMap
 	  int64_t offset = sread_leb128(ptr);
 	  lineInfo.advanceLine(offset);
 
-	  DUMP_RAWLINE_OUTPUT("Advance Line by " <<
+	  DUMP_RAW_OUTPUT("Advance Line by " <<
 		       offset << " to " << lineInfo.line << "\n");
 
 	  break;
@@ -748,7 +841,7 @@ LineMapInfo::parseLineMap
 	  uint64_t offset = uread_leb128(ptr);
 	  lineInfo.advancePC(offset, lds);
 
-	  DUMP_RAWLINE_OUTPUT("Advance PC by " <<
+	  DUMP_RAW_OUTPUT("Advance PC by " <<
 		       offset << " to " << V(lineInfo.address) << "\n");
 
 	  break;
@@ -759,22 +852,25 @@ LineMapInfo::parseLineMap
 	  int div = offset / lds.line_range;
 	  lineInfo.advancePC(div, lds);
 
-	  DUMP_RAWLINE_OUTPUT("Advance address by constant " <<
+	  DUMP_RAW_OUTPUT("Advance address by constant " <<
 		       offset << " to " << V(lineInfo.address));
 
 	  if (lineInfo.op_index)
-	    DUMP_RAWLINE_OUTPUT(", op_index to " << lineInfo.op_index);
+	    DUMP_RAW_OUTPUT(", op_index to " << lineInfo.op_index);
 
-	  DUMP_RAWLINE_OUTPUT("\n");
+	  DUMP_RAW_OUTPUT("\n");
 
 	  break;
 	}
 	
 	case DW_LNS_copy:
 
-	  DUMP_RAWLINE_OUTPUT("Copy\n");
+	  DUMP_RAW_OUTPUT("Copy\n");
 
-	  // FIXME: append row to matrix here
+	  // append row to matrix
+          lih->processMatrixRow(&lineInfo, &fs);
+
+          lineInfo.resetFlagsAndDiscriminator();
 
 	  break;
 
@@ -782,7 +878,7 @@ LineMapInfo::parseLineMap
 	  unsigned int offset = uread(ptr, 2);
 	  lineInfo.fixedAdvancePC(offset);
 
-	  DUMP_RAWLINE_OUTPUT("advance address by fixed value " << offset <<
+	  DUMP_RAW_OUTPUT("advance address by fixed value " << offset <<
 		       " to " << V(lineInfo.address));
 
 	  break;
@@ -791,14 +887,14 @@ LineMapInfo::parseLineMap
 	case DW_LNS_negate_stmt:
 	  lineInfo.negateStmt();
 
-	  DUMP_RAWLINE_OUTPUT("set 'is_stmt' to " << lineInfo.is_stmt << "\n");
+	  DUMP_RAW_OUTPUT("set 'is_stmt' to " << lineInfo.is_stmt << "\n");
 
 	  break;
 	
 	case DW_LNS_set_basic_block:
 	  lineInfo.basicBlock();
 
-	  DUMP_RAWLINE_OUTPUT("set basic block flag\n");
+	  DUMP_RAW_OUTPUT("set basic block flag\n");
 
 	  break;
 	
@@ -806,7 +902,7 @@ LineMapInfo::parseLineMap
 	  unsigned int col = uread_leb128(ptr);
 	  lineInfo.setColumn(col);
 
-	  DUMP_RAWLINE_OUTPUT("Set Column to " << col << "\n");
+	  DUMP_RAW_OUTPUT("Set Column to " << col << "\n");
 
 	  break;
 	}
@@ -814,7 +910,7 @@ LineMapInfo::parseLineMap
 	case DW_LNS_set_epilogue_begin:
 	  lineInfo.beginEpilogue();
 
-	  DUMP_RAWLINE_OUTPUT("Set epilogue begin flag\n");
+	  DUMP_RAW_OUTPUT("Set epilogue begin flag\n");
 
 	  break;
 	
@@ -822,7 +918,7 @@ LineMapInfo::parseLineMap
 	  uint64_t file = uread_leb128(ptr);
 	  lineInfo.setFile(file);
 
-	  DUMP_RAWLINE_OUTPUT("Set File Name to entry " << file <<
+	  DUMP_RAW_OUTPUT("Set File Name to entry " << file <<
 		       " in the File Name Table\n");
 
 	  break;
@@ -831,14 +927,14 @@ LineMapInfo::parseLineMap
 	  unsigned int isa = uread_leb128(ptr);
 	  lineInfo.setIsa(isa);
 
-	  DUMP_RAWLINE_OUTPUT("set isa to " << isa << "\n");
+	  DUMP_RAW_OUTPUT("set isa to " << isa << "\n");
 	  break;
 	}
 
 	case DW_LNS_set_prologue_end:
 	  lineInfo.endPrologue();
 	  
-	  DUMP_RAWLINE_OUTPUT("Set prologue end flag\n");
+	  DUMP_RAW_OUTPUT("Set prologue end flag\n");
 	  break;
 	}
       }
@@ -847,7 +943,7 @@ LineMapInfo::parseLineMap
     // return updated pointer into the section
     *sptr = (const unsigned char *) ptr;
 
-    DUMP_RAWLINE_OUTPUT("\n");
+    DUMP_RAW_OUTPUT("\n");
   }
 
   return true;
@@ -860,7 +956,7 @@ parseLineSection
  GElf_Ehdr *ehdr,
  Elf_Scn *scn,
  GElf_Shdr *shdr,
- LineInfoCallback processMatrixRow
+ LineInfoHandler *lih
 )
 {
   if (shdr->sh_size == 0) return;
@@ -877,7 +973,7 @@ parseLineSection
   const unsigned char *end = start + data->d_size;
 
   LineMapInfo lmh;
-  lmh.parse(ehdr, scn, shdr, start, end, &ptr, processMatrixRow);
+  lmh.parse(ehdr, scn, shdr, start, end, &ptr, lih);
 }
 
 
@@ -917,6 +1013,8 @@ LineMapInfo::dumpDirectoryTable
 (
 )
 {
+  DirectoryTable &directories = fs.repr->getDirectoryTable();
+
   DUMP_HEADER_OUTPUT(" The Directory Table (offset " <<
 	       std::hex << directories.offset << std::dec << "):\n");
   directories.dump();
@@ -929,6 +1027,8 @@ LineMapInfo::dumpFileTable
 (
 )
 {
+  FileTable &files = fs.repr->getFileTable();
+
   DUMP_HEADER_OUTPUT(" The File Name Table (offset " <<
 	       std::hex << files.offset << std::dec << "):\n"
 	       "  Entry\tDir\tTime\tSize\tName\n");
@@ -957,7 +1057,7 @@ readLineMap
  char *cubin_ptr,
  Elf *elf,
  Elf_SectionVector *sections,
- LineInfoCallback processMatrixRow
+ LineInfoHandler *lih
 )
 {
   GElf_Ehdr ehdr_v;
@@ -988,7 +1088,7 @@ readLineMap
 
 	  // found the line map, so we are done with the linear scan of sections
 
-	  parseLineSection(ehdr, scn, &shdr, processMatrixRow);
+	  parseLineSection(ehdr, scn, &shdr, lih);
 	  break;
 	}
       }
@@ -1007,14 +1107,14 @@ readCubinLineMap
 (
  char *cubin_ptr,
  Elf *cubin_elf,
- LineInfoCallback processMatrixRow
+ LineInfoHandler *lih
 )
 {
   bool success = false;
 
   Elf_SectionVector *sections = elfGetSectionVector(cubin_elf);
   if (sections) {
-    readLineMap(cubin_ptr, cubin_elf, sections, processMatrixRow);
+    readLineMap(cubin_ptr, cubin_elf, sections, lih);
     delete sections;
   }
 

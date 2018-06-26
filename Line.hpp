@@ -60,15 +60,10 @@
 //******************************************************************************
 
 #include <inttypes.h>
+#include <linux/limits.h>
+#include <vector>
 
 
-
-//******************************************************************************
-// macros
-//******************************************************************************
-
-#define DUMP_HEADER       1
-#define DUMP_DECODED_LINE 0
 
 
 //******************************************************************************
@@ -135,22 +130,35 @@ public:
    uint64_t opcode_raw,
    const LineDecoderSettings &lds
   );
-
-  void dump() {
-#if DUMP_DECODED_LINE 
-   std::cout << "Line: addr=" << (void *) address <<
-      ", op_index=" << (uint16_t) op_index << ", file=" << file <<
-      ", line=" << line << ", col=" << column << " is_stmt=" << is_stmt <<
-      "\n  bblock=" << basic_block <<
-      ", end_seq=" << end_sequence << ", pro_end=" << prologue_end <<
-      ", epi_beg=" << epilogue_begin << ", isa=" << isa <<
-      ", discr=" << discriminator << "\n";
-#endif
-  };
 };
 
 
+class FileSystemRepr;
 
-typedef void (*LineInfoCallback)(LineInfo *line);
+
+class FileSystem {
+public:
+
+  FileSystem();
+  ~FileSystem();
+
+  const char *getFileName(int i);
+  const char *getDirName(int i);
+
+
+public:
+   FileSystemRepr *repr;
+};
+
+
+class LineInfoHandler {
+public:
+  virtual void processMatrixRow
+  (
+    LineInfo *li, 
+    FileSystem *fs
+  ) { 
+  }; 
+};
 
 #endif

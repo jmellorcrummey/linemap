@@ -15,6 +15,7 @@
 
 #include <RelocateCubin.hpp> 
 #include <ReadCubinLineMap.hpp> 
+#include <LineInfoDecoderDump.hpp> 
 
 #ifndef EM_CUDA
 #define EM_CUDA 190
@@ -28,14 +29,29 @@ typedef struct {
   bool endseq;
 } stmt_t;
 
+class LineInfoHandlerLineMapRecord : public LineInfoHandler {
+public:
 
-void processMatrixRow
-(
- LineInfo *line
-)
-{
-  line->dump();
-}
+  virtual void processMatrixRow
+  (
+    LineInfo *li,
+    FileSystem *fs
+  ) {
+#if DUMP_DECODED_LINE
+   std::cout << "Line: addr=" << (void *) li->address <<
+      ", li->op_index=" << (uint16_t) li->op_index << ", file=" << li->file <<
+      ", line=" << li->line << ", col=" << li->column << " is_stmt=" << li->is_stmt <<
+      "\n  bblock=" << li->basic_block <<
+      ", end_seq=" << li->end_sequence << ", pro_end=" << li->prologue_end <<
+      ", epi_beg=" << li->epilogue_begin << ", isa=" << li->isa <<
+      ", discr=" << li->discriminator << "\n";
+#endif
+  };
+};
+
+
+LineInfoDecoderDump decoder;
+LineInfoHandlerLineMapRecord lmr;
 
 int
 main(int argc, char **argv)
@@ -82,7 +98,7 @@ main(int argc, char **argv)
     printf("FAILURE: file %s is not an ELF file\n", argv[1]);
   }
 
-  readCubinLineMap(memPtr, elf, processMatrixRow);
+  readCubinLineMap(memPtr, elf, &lmr);
   return 0;
 
   if (ehdr->e_machine == EM_CUDA) {
