@@ -98,7 +98,7 @@ main(int argc, char **argv)
     printf("FAILURE: file %s is not an ELF file\n", argv[1]);
   }
 
-  readCubinLineMap(memPtr, elf, &lmr);
+  readCubinLineMap(memPtr, elf, &decoder);
   return 0;
 
   if (ehdr->e_machine == EM_CUDA) {
